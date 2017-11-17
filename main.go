@@ -41,7 +41,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Embedfiles embeds files into a map in a go file.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n\n")
-		fmt.Fprintf(os.Stderr, "  embedfile -out=files.go -pkg=main <paths>\n\n")
+		fmt.Fprintf(os.Stderr, "  embedfiles -out=files.go -pkg=main <paths>\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n\n")
 		flag.PrintDefaults()
 	}
@@ -90,11 +90,7 @@ func main() {
 				return fmt.Errorf("compress: %s", err)
 			}
 
-			key := path[len(inputPath):]
-			if len(key) > 0 && key[0] == '/' {
-				key = key[1:]
-			}
-			files[key] = contentsZipped.Bytes()
+			files[path] = contentsZipped.Bytes()
 			return nil
 		})
 		if err != nil {
