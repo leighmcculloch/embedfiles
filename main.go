@@ -39,7 +39,7 @@ func main() {
 	out := flag.String("out", "files.go", "output go `file`")
 	pkg := flag.String("pkg", "main", "`package` name of the go file")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Embedfile embeds files into a map in a go file.\n\n")
+		fmt.Fprintf(os.Stderr, "Embedfiles embeds files into a map in a go file.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n\n")
 		fmt.Fprintf(os.Stderr, "  embedfile -out=files.go -pkg=main <paths>\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n\n")
