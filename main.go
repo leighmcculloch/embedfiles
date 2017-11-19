@@ -16,15 +16,11 @@ const tmpl = `
 
 package {{.Package}}
 
-var fileNames = []string{
-{{range $name, $bytes := .Files}}"{{$name}}",{{end}}
-}
+var fileNames = []string{ {{range $name, $bytes := .Files}}"{{$name}}",{{end}} }
 
 var files = map[string][]byte{
 {{range $name, $bytes := .Files}}
-	"{{$name}}": []byte{
-	{{range $bytes}}{{.}},{{end}}
-	},
+	"{{$name}}": []byte{ {{range $bytes}}{{.}},{{end}} },
 {{end}}
 }
 `
