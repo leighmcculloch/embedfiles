@@ -3,7 +3,7 @@
 
 Embedfiles is a tool for embedding files into Go code.
 
-Files are gzip compressed and stored in a map of filenames to file data.
+Files are stored in a map of filenames to file data.
 
 ## Install
 
@@ -36,12 +36,13 @@ Flags:
 Given files:
 ```
 $ echo "hello world" > file1
-$ echo "who are you?" > file2
+$ mkdir morefiles
+$ echo "who are you?" > morefiles/file2
 ```
 
 Embed with `embedfiles`:
 ```
-$ embedfiles file1 file2
+$ embedfiles file1 morefiles
 ```
 
 A new file `files.go` is created:
@@ -52,7 +53,7 @@ $ cat files.go
 package main
 
 var fileNames = []string{
-        "file1", "file2",
+        "file1", "morefiles/file2",
 }
 
 var files = map[string][]byte{
@@ -61,7 +62,7 @@ var files = map[string][]byte{
                 31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 202, 72, 205, 201, 201, 87, 40, 207, 47, 202, 73, 225, 2, 4, 0, 0, 255, 255, 45, 59, 8, 175, 12, 0, 0, 0,
         },
 
-        "file2": []byte{
+        "morefiles/file2": []byte{
                 31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 42, 207, 200, 87, 72, 44, 74, 85, 168, 204, 47, 181, 231, 2, 4, 0, 0, 255, 255, 138, 46, 37, 108, 13, 0, 0, 0,
         },
 }
