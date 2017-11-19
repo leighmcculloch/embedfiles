@@ -2,7 +2,6 @@ package main // import "4d63.com/embedfiles"
 
 import (
 	"bytes"
-	"compress/gzip"
 	"flag"
 	"fmt"
 	"go/format"
@@ -38,8 +37,9 @@ type tmplData struct {
 func main() {
 	out := flag.String("out", "files.go", "output go `file`")
 	pkg := flag.String("pkg", "main", "`package` name of the go file")
+	verbose := flag.Bool("verbose", false, "")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Embedfiles embeds files into a map in a go file.\n\n")
+		fmt.Fprintf(os.Stderr, "Embedfiles embeds files in the paths into a map in a go file.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n\n")
 		fmt.Fprintf(os.Stderr, "  embedfiles -out=files.go -pkg=main <paths>\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n\n")
@@ -71,26 +71,19 @@ func main() {
 				return nil
 			}
 
+			if *verbose {
+				fmt.Printf("%s ", path)
+			}
+
 			contents, err := ioutil.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading file: %s", err)
 			}
-
-			contentsZipped := bytes.Buffer{}
-			zw, err := gzip.NewWriterLevel(&contentsZipped, gzip.BestCompression)
-			if err != nil {
-				return fmt.Errorf("compress: %s", err)
-			}
-			_, err = zw.Write(contents)
-			if err != nil {
-				return fmt.Errorf("compress: %s", err)
-			}
-			err = zw.Close()
-			if err != nil {
-				return fmt.Errorf("compress: %s", err)
+			if *verbose {
+				fmt.Printf("(%d bytes)\n", len(contents))
 			}
 
-			files[path] = contentsZipped.Bytes()
+			files[path] = contents
 			return nil
 		})
 		if err != nil {
