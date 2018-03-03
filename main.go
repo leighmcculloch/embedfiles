@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
-	"html/template"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"text/template"
 )
 
 const tmpl = `
