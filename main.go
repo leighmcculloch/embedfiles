@@ -79,6 +79,7 @@ func main() {
 				fmt.Printf("(%d bytes)\n", len(contents))
 			}
 
+			path = filepath.ToSlash(path)
 			files[path] = contents
 			return nil
 		})
