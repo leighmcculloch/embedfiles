@@ -1,6 +1,8 @@
 # embedfiles
 [![Go Report Card](https://goreportcard.com/badge/github.com/leighmcculloch/embedfiles)](https://goreportcard.com/report/github.com/leighmcculloch/embedfiles)
 
+**This tool is no longer maintained. Use the official `go:embed` functionality available in Go 1.16+ instead. See https://pkg.go.dev/embed for more details.**
+
 Embedfiles is a tool for embedding files into Go code.
 
 Files are stored in a map of filenames to file data.
