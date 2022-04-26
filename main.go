@@ -2,13 +2,19 @@ package main // import "4d63.com/embedfiles"
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/base64"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"go/format"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"4d63.com/embedfiles/tst"
 )
 
 const tmpl = `
@@ -16,6 +22,109 @@ const tmpl = `
 
 package {{.Package}}
 
+{{if .UseGzip}}
+import (
+	"compress/gzip"
+	"encoding/base64"
+)
+var {{.FileNamesVar}} = []string{ {{range $name, $bytes := .Files}}"{{$name}}",{{end}} }
+
+func unGzB64(s string) []byte {
+	gr, err := gzip.NewReader(base64.NewReader(base64.StdEncoding, strings.NewReader(s)))
+	if err != nil {
+		panic(err)
+	}
+	b, err := ioutil.ReadAll(gr)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+var {{.FilesVar}} = map[string][]byte{
+{{range $name, $bytes := .Files}}
+	"{{$name}}": unGzB64(` + "`" + `{{ gzB64 $bytes }}` + "`" + `),
+{{end}}
+}
+{{else if .UseTrie}}
+import (
+	"compress/gzip"
+	"encoding/base64"
+	"encoding/gob"
+	"strings"
+)
+
+var {{.FileNamesVar}} []string
+var {{.FilesVar}} = make(map[string][]byte)
+
+func init() {
+	const raw = ` + "`{{.Raw}}`" + `
+	gr, err := gzip.NewReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(raw)))
+	if err != nil {
+		panic(err)
+	}
+	var tr TST
+	if err = gob.NewDecoder(gr).Decode(&tr); err != nil {
+		panic(err)
+	}
+	tr.ForEach(func(s string, val []byte) {
+		{{.FileNamesVar}} = append({{.FileNamesVar}}, s)
+		{{.FilesVar}}[s] = val
+	})
+}
+
+// TST can be the root, and can be a sub-tree
+type TST struct {
+	Left  *TST
+	Right *TST
+	Eq    *TST
+	Eqkey byte
+	Val   []byte
+}
+
+// Child returns the child subtree of the current tree
+func (t *TST) Child(c byte) *TST {
+	if t.Eq == nil {
+		t.Eqkey = c
+		t.Eq = &TST{}
+		return t.Eq
+	} else if c == t.Eqkey {
+		return t.Eq
+	} else if c < t.Eqkey {
+		if t.Left == nil {
+			t.Left = &TST{}
+		}
+		return t.Left.Child(c)
+	} else { // c > t.eqkey
+		if t.Right == nil {
+			t.Right = &TST{}
+		}
+		return t.Right.Child(c)
+	}
+}
+
+func (t *TST) ForEach(f func(s string, val []byte)) {
+	var prefix []byte
+	t.forEach(f, prefix)
+}
+
+func (t *TST) forEach(f func(s string, val []byte), prefix []byte) {
+	if t.Val != nil {
+		f(string(prefix), t.Val)
+	}
+
+	if t.Left != nil {
+		t.Left.forEach(f, prefix)
+	}
+
+	if t.Eq != nil {
+		t.Eq.forEach(f, append(prefix, t.Eqkey))
+	}
+
+	if t.Right != nil {
+		t.Right.forEach(f, prefix)
+	}
+}
+{{else}}
 var {{.FileNamesVar}} = []string{ {{range $name, $bytes := .Files}}"{{$name}}",{{end}} }
 
 var {{.FilesVar}} = map[string][]byte{
@@ -23,13 +132,16 @@ var {{.FilesVar}} = map[string][]byte{
 	"{{$name}}": []byte{ {{range $bytes}}{{.}},{{end}} },
 {{end}}
 }
+{{end}}
 `
 
 type tmplData struct {
-	Package      string
-	Files        map[string][]byte
-	FileNamesVar string
-	FilesVar     string
+	Package          string
+	Files            map[string][]byte
+	FileNamesVar     string
+	FilesVar         string
+	Raw              string
+	UseTrie, UseGzip bool
 }
 
 func main() {
@@ -37,6 +149,8 @@ func main() {
 	pkg := flag.String("pkg", "main", "`package` name of the go file")
 	filesVar := flag.String("files-var", "files", "name of the generated files slice")
 	fileNamesVar := flag.String("file-names-var", "fileNames", "name of the generated file names slice")
+	useTrie := flag.Bool("trie", false, "create a Ternary Search Tree")
+	useGzip := flag.Bool("gzip", false, "gzip content")
 	verbose := flag.Bool("verbose", false, "")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Embedfiles embeds files in the paths into a map in a go file.\n\n")
@@ -60,6 +174,7 @@ func main() {
 		return
 	}
 
+	var tr tst.TST
 	files := map[string][]byte{}
 	for _, inputPath := range inputPaths {
 		err = filepath.Walk(inputPath, func(path string, info os.FileInfo, err error) error {
@@ -84,7 +199,11 @@ func main() {
 			}
 
 			path = filepath.ToSlash(path)
-			files[path] = contents
+			if *useTrie {
+				tr.Set(path, contents)
+			} else {
+				files[path] = contents
+			}
 			return nil
 		})
 		if err != nil {
@@ -92,22 +211,43 @@ func main() {
 			return
 		}
 	}
+	data := tmplData{
+		Package: *pkg, Files: files, FilesVar: *filesVar, FileNamesVar: *fileNamesVar,
+		UseTrie: *useTrie, UseGzip: *useGzip,
+	}
 
-	t, err := template.New("").Parse(tmpl)
+	if *useTrie {
+		pr, pw := io.Pipe()
+		go func() { pw.CloseWithError(gob.NewEncoder(pw).Encode(tr)) }()
+		var buf bytes.Buffer
+		if err := gzB64(&buf, pr); err != nil {
+			printErr("base64 encoding", err)
+			return
+		}
+		data.Raw = buf.String()
+	}
+
+	t, err := template.New("").Funcs(template.FuncMap{
+		"gzB64": func(p []byte) (string, error) {
+			var buf bytes.Buffer
+			err := gzB64(&buf, bytes.NewReader(p))
+			return buf.String(), err
+		},
+	}).Parse(tmpl)
 	if err != nil {
 		printErr("parsing template", err)
 		return
 	}
 
-	buf := bytes.Buffer{}
-	err = t.Execute(&buf, &tmplData{Package: *pkg, Files: files, FilesVar: *filesVar, FileNamesVar: *fileNamesVar})
-	if err != nil {
+	var buf bytes.Buffer
+	if err = t.Execute(&buf, data); err != nil {
 		printErr("generating code", err)
 		return
 	}
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
+		fmt.Fprintf(os.Stderr, buf.String())
 		printErr("formatting code", err)
 		return
 	}
@@ -122,4 +262,32 @@ func main() {
 
 func printErr(doing string, err error) {
 	fmt.Fprintf(os.Stderr, "Error %s: %s\n", doing, err)
+}
+
+func gzB64(w io.Writer, r io.Reader) error {
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(gw, r); err != nil {
+		return err
+	}
+	if err = gw.Close(); err != nil {
+		return err
+	}
+	b := buf.Bytes()
+	enc := base64.NewEncoder(base64.StdEncoding, w)
+	for len(b) != 0 {
+		n := 54
+		if n > len(b) {
+			n = len(b)
+		}
+		if _, err = enc.Write(b[:n]); err != nil {
+			return err
+		}
+		b = b[n:]
+		w.Write([]byte{'\n'})
+	}
+	return enc.Close()
 }
